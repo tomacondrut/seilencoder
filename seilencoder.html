@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kippstation: Kinematik & Encoder-Übersetzung</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --primary-hover: #1a252f;
+            --accent: #e67e22;
+            --bg-color: #f4f4f9;
+            --card-bg: #ffffff;
+            --text-main: #333333;
+            --border-radius: 8px;
+        }
+        
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); padding: 20px; color: var(--text-main); margin: 0; }
+        .container { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-bottom: 50px; }
+        .card { background: var(--card-bg); padding: 20px; border-radius: var(--border-radius); box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+        .header { grid-column: 1 / -1; margin-bottom: 5px; border-bottom: 2px solid #eee; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .header-text h2 { margin-top: 0; margin-bottom: 5px; color: var(--primary); }
+        .header-text p { margin: 0; color: #666; }
+        
+        .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-height: 550px; overflow-y: auto; padding-right: 10px; }
+        .control-group { display: flex; flex-direction: column; background: #fafafa; padding: 10px 12px; border-radius: 6px; border: 1px solid #e0e0e0; }
+        .control-group.full-width { grid-column: 1 / -1; }
+        label { font-weight: 600; margin-bottom: 5px; font-size: 0.85em; color: #444;}
+        input[type="range"] { width: 100%; cursor: pointer; margin-top: 5px; }
+        input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: monospace; font-size: 1.05em; }
+        .val-display { color: var(--accent); font-weight: bold; float: right; font-size: 1.1em;}
+        
+        .section-title { grid-column: 1 / -1; font-size: 0.9em; text-transform: uppercase; color: #7f8c8d; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 10px; margin-bottom: -5px;}
+        
+        button.info-btn { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1.1em; transition: background 0.2s; }
+        button.info-btn:hover { background: #2980b9; }
+
+        canvas { border: 1px solid #ddd; border-radius: 4px; width: 100%; background: #fff; }
+        
+        .charts-container { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .chart-wrapper { height: 350px; position: relative; background: white; border-radius: var(--border-radius); box-shadow: 0 4px 10px rgba(0,0,0,0.08); padding: 15px; box-sizing: border-box;}
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 8px; width: 700px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto; line-height: 1.6; }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .modal-content h4 { color: var(--accent); margin-top: 20px; margin-bottom: 5px; font-size: 1.1em; }
+        .modal-content p { margin-top: 5px; }
+        .formula-box { background: #f8f9f9; padding: 15px; border-radius: 5px; border-left: 4px solid #3498db; margin: 15px 0; overflow-x: auto; text-align: center; font-size: 1.1em; }
+        .modal-close-btn { background: #7f8c8d; margin-top: 20px; width: 100%; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .modal-close-btn:hover { background: #34495e; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div class="header-text">
+            <h2>Kippstation: Kinematik & Encoder-Übersetzung</h2>
+            <p>Geometrische Berechnung der Proportionalität zwischen Zylinderhub und Seilencoder.</p>
+        </div>
+        <button id="btnOpenInfo" class="info-btn">ℹ️ Formeln & Info</button>
+    </div>
+
+    <div class="card" style="position: relative;">
+        <canvas id="simCanvas" width="600" height="500"></canvas>
+    </div>
+
+    <div class="card controls-grid">
+        
+        <div class="control-group full-width" style="background: #eef2f5; border-color: #d6eaf8;">
+            <label>Aktueller Kippwinkel: <span id="angleVal" class="val-display" style="color: #2980b9;">0.0°</span></label>
+            <input type="range" id="angleSlider" min="0" max="75" value="0" step="0.1">
+        </div>
+
+        <div class="section-title">Haupt-Zylinder (Maße in mm)</div>
+        <div class="control-group">
+            <label>Lagerung X (Abstand zu Hauptdrehpunkt):</label>
+            <input type="number" id="cylBaseX" value="3333">
+        </div>
+        <div class="control-group">
+            <label>Lagerung Y (Höhenversatz):</label>
+            <input type="number" id="cylBaseY" value="-500">
+        </div>
+        <div class="control-group">
+            <label>Aufhängung Rahmen X (bei 0°):</label>
+            <input type="number" id="cylTopX" value="3333">
+        </div>
+        <div class="control-group">
+            <label>Aufhängung Rahmen Y (bei 0°):</label>
+            <input type="number" id="cylTopY" value="0">
+        </div>
+
+        <div class="section-title">Seil-Encoder (Maße in mm)</div>
+        <div class="control-group">
+            <label>Gehäuse X (Abstand zu Hauptdrehpunkt):</label>
+            <input type="number" id="encBaseX" value="1500">
+        </div>
+        <div class="control-group">
+            <label>Gehäuse Y (Höhenversatz):</label>
+            <input type="number" id="encBaseY" value="-200">
+        </div>
+        <div class="control-group">
+            <label>Seilöse Rahmen X (bei 0°):</label>
+            <input type="number" id="encTopX" value="1500">
+        </div>
+        <div class="control-group">
+            <label>Seilöse Rahmen Y (bei 0°):</label>
+            <input type="number" id="encTopY" value="0">
+        </div>
+        
+        <div class="section-title">Zylinder-Stufen (für Rendering)</div>
+        <div class="control-group full-width">
+            <label>Anzahl Stufen:</label>
+            <input type="number" id="numStages" value="5" min="1" max="6">
+        </div>
+    </div>
+
+    <div class="charts-container">
+        <div class="chart-wrapper">
+            <canvas id="chartLengths"></canvas>
+        </div>
+        <div class="chart-wrapper">
+            <canvas id="chartFactor"></canvas>
+        </div>
+    </div>
+</div>
+
+<div id="infoModal" class="modal">
+    <div class="modal-content">
+        <h3>ℹ️ Kinematische Berechnungsgrundlagen</h3>
+        <p>Dieses Tool berechnet das exakte Übersetzungsverhältnis zwischen dem Zylinderhub und der Auszugslänge des Seil-Encoders in Abhängigkeit vom Kippwinkel. Die Berechnung basiert auf den folgenden mathematischen Modellen:</p>
+
+        <h4>1. Koordinatentransformation (Rotationsmatrix)</h4>
+        <p>Die oberen Aufhängepunkte am Kipprahmen rotieren starr um den Hauptdrehpunkt $(0, 0)$. Die neue Position $(x', y')$ bei einem Kippwinkel $\alpha$ wird ermittelt durch:</p>
+        <div class="formula-box">
+            $$ x' = x \cdot \cos(\alpha) - y \cdot \sin(\alpha) $$
+            $$ y' = x \cdot \sin(\alpha) + y \cdot \cos(\alpha) $$
+        </div>
+
+        <h4>2. Absolute Längenberechnung</h4>
+        <p>Aus der statischen Lagerkoordinate $(x_{base}, y_{base})$ und der rotierenden Aufhängung $(x', y')$ ergibt sich die absolute Länge $L$ (für Zylinder oder Seil) über den euklidischen Abstand:</p>
+        <div class="formula-box">
+            $$ L(\alpha) = \sqrt{(x' - x_{base})^2 + (y' - y_{base})^2} $$
+        </div>
+
+        <h4>3. Hub und Übersetzungsfaktor</h4>
+        <p>Der eigentliche Hub $s$ ist die Differenz aus der aktuellen Länge und der Ruhelänge bei $0^\circ$. Der Faktor $k$ definiert das geometrische Übersetzungsverhältnis, das in der SPS hinterlegt werden muss:</p>
+        <div class="formula-box">
+            $$ s(\alpha) = L(\alpha) - L(0^\circ) $$
+            $$ k = s_{Zyl} \cdot s_{Enc}^{-1} $$
+        </div>
+        <p><em>Sonderfall $0^\circ$:</em> Um eine mathematisch undefinierte Division durch Null bei nicht ausgefahrenen Elementen zu vermeiden, wird der Start-Faktor über eine infinitesimale Auslenkung approximiert.</p>
+
+        <button id="btnCloseInfo" class="modal-close-btn">Fenster schließen</button>
+    </div>
+</div>
+
+<script>
+    /* =========================================================================
+       1. GLOBALE VARIABLEN & KINEMATIK-MODELL
+       ========================================================================= */
+    let currentAngle = 0;
+    
+    let GEO = {
+        cylBase: { x: 3333, y: -500 },
+        cylTop0: { x: 3333, y: 0 },
+        encBase: { x: 1500, y: -200 },
+        encTop0: { x: 1500, y: 0 },
+        numStages: 5
+    };
+
+    let kinData = {
+        angles: [], cylLengths: [], cylStrokes: [], encLengths: [], encStrokes: [], factors: []
+    };
+
+    let chartLengths = null;
+    let chartFactor = null;
+    let ctxSim = null;
+    let cvs = null;
+
+    /* =========================================================================
+       2. INITIALISIERUNG
+       ========================================================================= */
+    window.onload = function() {
+        ctxSim = document.getElementById('simCanvas').getContext('2d');
+        cvs = document.getElementById('simCanvas');
+
+        bindEvents();
+        updateGeoFromInputs();
+        setupCharts();
+        
+        recalculateKinematics();
+        updateCharts();
+        drawSimulation();
+    };
+
+    function bindEvents() {
+        const slider = document.getElementById('angleSlider');
+        slider.addEventListener('input', (e) => {
+            currentAngle = parseFloat(e.target.value);
+            document.getElementById('angleVal').innerText = currentAngle.toFixed(1) + '°';
+            drawSimulation();
+            updateChartCursors();
+        });
+
+        const inputs = ['cylBaseX', 'cylBaseY', 'cylTopX', 'cylTopY', 'encBaseX', 'encBaseY', 'encTopX', 'encTopY', 'numStages'];
+        inputs.forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                updateGeoFromInputs();
+                recalculateKinematics();
+                updateCharts();
+                drawSimulation();
+            });
+        });
+
+        document.getElementById('btnOpenInfo').addEventListener('click', () => { document.getElementById('infoModal').style.display = 'flex'; });
+        document.getElementById('btnCloseInfo').addEventListener('click', () => { document.getElementById('infoModal').style.display = 'none'; });
+    }
+
+    function updateGeoFromInputs() {
+        GEO.cylBase.x = parseFloat(document.getElementById('cylBaseX').value);
+        GEO.cylBase.y = parseFloat(document.getElementById('cylBaseY').value);
+        GEO.cylTop0.x = parseFloat(document.getElementById('cylTopX').value);
+        GEO.cylTop0.y = parseFloat(document.getElementById('cylTopY').value);
+        
+        GEO.encBase.x = parseFloat(document.getElementById('encBaseX').value);
+        GEO.encBase.y = parseFloat(document.getElementById('encBaseY').value);
+        GEO.encTop0.x = parseFloat(document.getElementById('encTopX').value);
+        GEO.encTop0.y = parseFloat(document.getElementById('encTopY').value);
+        
+        GEO.numStages = parseInt(document.getElementById('numStages').value);
+    }
+
+    /* =========================================================================
+       3. MATHEMATISCHER LÖSER
+       ========================================================================= */
+    function rotatePoint(p, alphaDeg) {
+        const rad = alphaDeg * Math.PI / 180;
+        return {
+            x: p.x * Math.cos(rad) - p.y * Math.sin(rad),
+            y: p.x * Math.sin(rad) + p.y * Math.cos(rad)
+        };
+    }
+
+    function dist(p1, p2) {
+        return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    }
+
+    function recalculateKinematics() {
+        kinData.angles = [];
+        kinData.cylLengths = [];
+        kinData.cylStrokes = [];
+        kinData.encLengths = [];
+        kinData.encStrokes = [];
+        kinData.factors = [];
+
+        const L_cyl_0 = dist(GEO.cylBase, GEO.cylTop0);
+        const L_enc_0 = dist(GEO.encBase, GEO.encTop0);
+
+        for (let a = 0; a <= 75; a += 0.5) {
+            kinData.angles.push(a);
+
+            let pCylTop = rotatePoint(GEO.cylTop0, a);
+            let pEncTop = rotatePoint(GEO.encTop0, a);
+
+            let lCyl = dist(GEO.cylBase, pCylTop);
+            let lEnc = dist(GEO.encBase, pEncTop);
+            
+            let strokeCyl = lCyl - L_cyl_0;
+            let strokeEnc = lEnc - L_enc_0;
+
+            kinData.cylLengths.push(lCyl);
+            kinData.encLengths.push(lEnc);
+            kinData.cylStrokes.push(strokeCyl);
+            kinData.encStrokes.push(strokeEnc);
+
+            if (a === 0) {
+                let pCylTop_tiny = rotatePoint(GEO.cylTop0, 0.01);
+                let pEncTop_tiny = rotatePoint(GEO.encTop0, 0.01);
+                let dCyl = dist(GEO.cylBase, pCylTop_tiny) - L_cyl_0;
+                let dEnc = dist(GEO.encBase, pEncTop_tiny) - L_enc_0;
+                kinData.factors.push(Math.abs(dEnc) > 1e-6 ? dCyl / dEnc : 0);
+            } else {
+                kinData.factors.push(strokeCyl / strokeEnc);
+            }
+        }
+    }
+
+    /* =========================================================================
+       4. DIAGRAMME (CHART.JS)
+       ========================================================================= */
+    const verticalCursorPlugin = {
+        id: 'verticalCursor',
+        afterDraw: (chart) => {
+            if (currentAngle === undefined) return;
+            const ctx = chart.ctx;
+            const xAxis = chart.scales.x;
+            const yAxis = chart.scales.y;
+            
+            const xPixel = xAxis.getPixelForValue(currentAngle);
+
+            if (xPixel >= xAxis.left && xPixel <= xAxis.right) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(xPixel, yAxis.top);
+                ctx.lineTo(xPixel, yAxis.bottom);
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#e67e22';
+                ctx.stroke();
+                
+                ctx.fillStyle = '#e67e22';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.fillText(currentAngle.toFixed(1) + '°', xPixel, yAxis.top - 5);
+                ctx.restore();
+            }
+        }
+    };
+
+    function setupCharts() {
+        const ctxL = document.getElementById('chartLengths').getContext('2d');
+        chartLengths = new Chart(ctxL, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Hub Zylinder (mm)', borderColor: '#2980b9', data: [], tension: 0.1, pointRadius: 0, borderWidth: 2 },
+                    { label: 'Hub Encoder (mm)', borderColor: '#8e44ad', data: [], tension: 0.1, pointRadius: 0, borderWidth: 2 }
+                ]
+            },
+            options: {
+                layout: {
+                    padding: { top: 25 } // Verhindert Überlagerung mit der Legende
+                },
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { title: { display: true, text: 'Ausgefahrene Strecke (Hub)' } },
+                scales: {
+                    x: { title: { display: true, text: 'Kippwinkel (°)' }, type: 'linear', min: 0, max: 75, ticks: { stepSize: 15 } },
+                    y: { title: { display: true, text: 'Hub (mm)' }, beginAtZero: true }
+                }
+            },
+            plugins: [verticalCursorPlugin]
+        });
+
+        const ctxF = document.getElementById('chartFactor').getContext('2d');
+        chartFactor = new Chart(ctxF, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Verhältnis (Hub Zyl / Hub Enc)', borderColor: '#c0392b', data: [], tension: 0.1, pointRadius: 0, borderWidth: 2 }
+                ]
+            },
+            options: {
+                layout: {
+                    padding: { top: 25 } // Verhindert Überlagerung mit der Legende
+                },
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { title: { display: true, text: 'Kinematischer Übersetzungsfaktor' } },
+                scales: {
+                    x: { title: { display: true, text: 'Kippwinkel (°)' }, type: 'linear', min: 0, max: 75, ticks: { stepSize: 15 } },
+                    y: { title: { display: true, text: 'Faktor' } }
+                }
+            },
+            plugins: [verticalCursorPlugin]
+        });
+    }
+
+    function updateCharts() {
+        const dataCylStrokes = kinData.angles.map((a, i) => ({x: a, y: kinData.cylStrokes[i]}));
+        const dataEncStrokes = kinData.angles.map((a, i) => ({x: a, y: kinData.encStrokes[i]}));
+        const dataFactors = kinData.angles.map((a, i) => ({x: a, y: kinData.factors[i]}));
+
+        chartLengths.data.datasets[0].data = dataCylStrokes;
+        chartLengths.data.datasets[1].data = dataEncStrokes;
+        chartLengths.update();
+
+        chartFactor.data.datasets[0].data = dataFactors;
+        chartFactor.update();
+    }
+
+    function updateChartCursors() {
+        chartLengths.update('none');
+        chartFactor.update('none');
+    }
+
+    /* =========================================================================
+       5. CANVAS RENDERING (SKALIERTE GEOMETRIE)
+       ========================================================================= */
+    function drawSimulation() {
+        ctxSim.clearRect(0, 0, cvs.width, cvs.height);
+        
+        const maxDistX = Math.max(Math.abs(GEO.cylBase.x), Math.abs(GEO.cylTop0.x), Math.abs(GEO.encTop0.x), 5000);
+        const pxPerMm = (cvs.width - 100) / maxDistX; 
+        
+        const originX = 50; 
+        const originY = cvs.height - 100;
+
+        function toPx(realX, realY) {
+            return {
+                x: originX + (realX * pxPerMm),
+                y: originY - (realY * pxPerMm) 
+            };
+        }
+
+        const pCylTopReal = rotatePoint(GEO.cylTop0, currentAngle);
+        const pEncTopReal = rotatePoint(GEO.encTop0, currentAngle);
+
+        const pCylTop = toPx(pCylTopReal.x, pCylTopReal.y);
+        const pCylBase = toPx(GEO.cylBase.x, GEO.cylBase.y);
+        const pEncTop = toPx(pEncTopReal.x, pEncTopReal.y);
+        const pEncBase = toPx(GEO.encBase.x, GEO.encBase.y);
+        const pOrigin = toPx(0, 0);
+
+        // --- ZYLINDER ---
+        const dxCyl = pCylTop.x - pCylBase.x;
+        const dyCyl = pCylTop.y - pCylBase.y;
+        const lenCylPx = Math.sqrt(dxCyl*dxCyl + dyCyl*dyCyl);
+        const uxCyl = dxCyl / lenCylPx;
+        const uyCyl = dyCyl / lenCylPx;
+
+        const cylMinLenMm = dist(GEO.cylBase, GEO.cylTop0);
+        const cylMaxLenMm = dist(GEO.cylBase, rotatePoint(GEO.cylTop0, 75)); 
+        const currentCylLenMm = dist(GEO.cylBase, pCylTopReal);
+        
+        const currentStrokeMm = currentCylLenMm - cylMinLenMm;
+        const maxStrokeMm = cylMaxLenMm - cylMinLenMm;
+        const strokePerStageMm = maxStrokeMm / GEO.numStages;
+        
+        let activeStage = Math.floor(currentStrokeMm / strokePerStageMm) + 1;
+        activeStage = Math.min(Math.max(activeStage, 1), GEO.numStages);
+
+        ctxSim.beginPath(); 
+        ctxSim.lineWidth = 18;
+        ctxSim.strokeStyle = '#2c3e50';
+        let baseEndPPx = (cylMinLenMm * pxPerMm);
+        ctxSim.moveTo(pCylBase.x, pCylBase.y); 
+        ctxSim.lineTo(pCylBase.x + uxCyl * baseEndPPx, pCylBase.y + uyCyl * baseEndPPx); 
+        ctxSim.stroke();
+
+        let currentDrawStartPx = baseEndPPx;
+        const strokePerStagePx = strokePerStageMm * pxPerMm;
+
+        for (let i = 0; i < GEO.numStages; i++) {
+            let stageExtensionPx = 0;
+            if (i < activeStage - 1) {
+                stageExtensionPx = strokePerStagePx; 
+            } else if (i === activeStage - 1) {
+                stageExtensionPx = (currentStrokeMm - (i * strokePerStageMm)) * pxPerMm; 
+            }
+
+            let currentDrawEndPx = currentDrawStartPx + Math.max(0, stageExtensionPx);
+
+            ctxSim.beginPath(); 
+            ctxSim.lineWidth = Math.max(14 - i*(10/Math.max(1, GEO.numStages-1)), 3);
+            ctxSim.strokeStyle = (i === activeStage - 1) ? '#3498db' : '#7f8c8d'; 
+            
+            ctxSim.moveTo(pCylBase.x + uxCyl * currentDrawStartPx, pCylBase.y + uyCyl * currentDrawStartPx); 
+            ctxSim.lineTo(pCylBase.x + uxCyl * currentDrawEndPx, pCylBase.y + uyCyl * currentDrawEndPx); 
+            ctxSim.stroke();
+
+            currentDrawStartPx = currentDrawEndPx;
+        }
+
+        // --- ENCODER ---
+        ctxSim.beginPath();
+        ctxSim.moveTo(pEncBase.x, pEncBase.y);
+        ctxSim.lineTo(pEncTop.x, pEncTop.y);
+        ctxSim.lineWidth = 2;
+        ctxSim.strokeStyle = '#e67e22';
+        ctxSim.setLineDash([5, 5]);
+        ctxSim.stroke();
+        ctxSim.setLineDash([]); 
+
+        ctxSim.fillStyle = '#d35400';
+        ctxSim.fillRect(pEncBase.x - 8, pEncBase.y - 8, 16, 16);
+
+        // --- RAHMEN ---
+        ctxSim.beginPath();
+        ctxSim.moveTo(pOrigin.x, pOrigin.y);
+        let frameEndX = Math.max(GEO.cylTop0.x, GEO.encTop0.x) + 500; 
+        let pFrameEndReal = rotatePoint({x: frameEndX, y: 0}, currentAngle);
+        let pFrameEnd = toPx(pFrameEndReal.x, pFrameEndReal.y);
+        
+        ctxSim.lineTo(pFrameEnd.x, pFrameEnd.y);
+        ctxSim.lineWidth = 8;
+        ctxSim.strokeStyle = '#95a5a6';
+        ctxSim.stroke();
+
+        ctxSim.fillStyle = '#c0392b';
+        ctxSim.beginPath(); ctxSim.arc(pCylTop.x, pCylTop.y, 5, 0, Math.PI*2); ctxSim.fill();
+        ctxSim.beginPath(); ctxSim.arc(pEncTop.x, pEncTop.y, 4, 0, Math.PI*2); ctxSim.fill();
+
+        ctxSim.beginPath(); ctxSim.arc(pOrigin.x, pOrigin.y, 8, 0, Math.PI*2);
+        ctxSim.fillStyle = '#2c3e50'; ctxSim.fill(); 
+        ctxSim.lineWidth = 2; ctxSim.strokeStyle = '#fff'; ctxSim.stroke();
+
+        // --- INFO OVERLAY ---
+        ctxSim.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctxSim.fillRect(10, 10, 280, 100);
+        ctxSim.strokeStyle = '#ddd'; ctxSim.strokeRect(10, 10, 280, 100);
+
+        ctxSim.fillStyle = '#333'; ctxSim.font = 'bold 13px Consolas, monospace';
+        ctxSim.fillText(`Winkel:         ${currentAngle.toFixed(1)}°`, 20, 30);
+        
+        let curStrokeCyl = currentCylLenMm - cylMinLenMm;
+        let curStrokeEnc = dist(GEO.encBase, pEncTopReal) - dist(GEO.encBase, GEO.encTop0);
+        let factor = curStrokeEnc > 1e-3 ? (curStrokeCyl / curStrokeEnc) : kinData.factors[0];
+
+        ctxSim.fillStyle = '#2980b9'; ctxSim.fillText(`Hub Zylinder:   ${curStrokeCyl.toFixed(1)} mm`, 20, 50);
+        ctxSim.fillStyle = '#8e44ad'; ctxSim.fillText(`Hub Encoder:    ${curStrokeEnc.toFixed(1)} mm`, 20, 70);
+        ctxSim.fillStyle = '#c0392b'; ctxSim.fillText(`Aktueller Faktor: ${factor.toFixed(4)}`, 20, 90);
+    }
+</script>
+</body>
+</html>
