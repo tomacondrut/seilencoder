@@ -301,11 +301,7 @@
         GEO.encBase.y = parseFloat(document.getElementById('encBaseY').value);
         GEO.encTop0.x = parseFloat(document.getElementById('encTopX').value);
         
-        let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
-        if (targetEncTopY < GEO.encBase.y) {
-            targetEncTopY = GEO.encBase.y;
-            document.getElementById('encTopY').value = targetEncTopY; 
-        }
+let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         GEO.encTop0.y = targetEncTopY;
         
         let st = parseInt(document.getElementById('numStages').value);
