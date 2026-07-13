@@ -678,9 +678,17 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         let curStrokeEnc = dist(GEO.encBase, pEncTopReal) - dist(GEO.encBase, GEO.encTop0);
         let factor = 0; if(kinData.angles.length > 0) factor = kinData.factors[Math.min(Math.floor(currentAngle / 0.5), kinData.factors.length - 1)];
 
-        ctxSim.fillStyle = '#2980b9'; ctxSim.fillText(`Hub Zylinder:   ${currentStrokeMm.toFixed(1)} mm`, 20, 50);
-        ctxSim.fillStyle = '#8e44ad'; ctxSim.fillText(`Hub Encoder:    ${curStrokeEnc.toFixed(1)} mm`, 20, 70);
-        ctxSim.fillStyle = '#c0392b'; ctxSim.fillText(`Mom. Getriebefaktor: ${factor === null ? 'SINGULARITÄT' : factor.toFixed(4)}`, 20, 90);
+let absLenCyl = dist(GEO.cylBase, pCylTopReal);
+        let absLenEnc = dist(GEO.encBase, pEncTopReal);
+
+        ctxSim.fillStyle = '#2980b9'; 
+        ctxSim.fillText(`Zylinder (Länge | Hub): ${absLenCyl.toFixed(1)} | ${currentStrokeMm.toFixed(1)} mm`, 20, 50);
+        
+        ctxSim.fillStyle = '#8e44ad'; 
+        ctxSim.fillText(`Encoder  (Länge | Hub): ${absLenEnc.toFixed(1)} | ${curStrokeEnc.toFixed(1)} mm`, 20, 70);
+        
+        ctxSim.fillStyle = '#c0392b'; 
+        ctxSim.fillText(`Mom. Getriebefaktor:    ${factor === null ? 'SINGULARITÄT' : factor.toFixed(4)}`, 20, 90);
     }
 </script>
 </body>
