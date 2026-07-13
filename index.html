@@ -167,7 +167,7 @@
         <p>Dieses Tool berechnet das exakte Übersetzungsverhältnis zwischen Zylinderhub und Seil-Encoder. Um Singularitäten (Unendlichkeits-Sprünge) zu vermeiden, wenn das Seil den Umkehrpunkt durchschreitet, basiert die Berechnung auf dem mathematischen Differenzialquotienten.</p>
 
         <h4>1. Koordinatentransformation (Rotationsmatrix)</h4>
-        <p>Die oberen Aufhängepunkte rotieren starr um den Hauptdrehpunkt $(0, 0)$. Die Position $(x', y')$ bei Winkel $\alpha$ ist:</p>
+        <p>Die oberen Aufhängepunkte rotieren starr um den Hauptdrehpunkt $(0, 0)$. Die Position $(x', y')$ bei Winkel $\alpha$ istt:</p>
         <div class="formula-box">
             $$x' = x \cdot \cos(\alpha) - y \cdot \sin(\alpha)$$
             $$y' = x \cdot \sin(\alpha) + y \cdot \cos(\alpha)$$
@@ -182,9 +182,14 @@
         <h4>3. Statisches vs. Momentanes Übersetzungsverhältnis</h4>
         <p>Ein reiner Dreisatzvergleich der Sehnen- oder Hublängen aus dem CAD liefert <strong>nicht</strong> den korrekten Faktor für die Steuerung. Hier muss streng unterschieden werden:</p>
         <ul>
-            <li><strong>Statisches Verhältnis (CAD-Sekante):</strong> Das einfache Teilen der Hublängen ($\frac{s_{Zyl}}{s_{Enc}}$) liefert nur einen Durchschnittswert über den bisher zurückgelegten Weg. Da die Anlage sich auf Kreisbahnen bewegt, verändert sich die Hebelwirkung durch den Sinus-/Kosinus-Einfluss jedoch nichtlinear. Ein statischer Wert würde bei der Regelung zu starken Fehlern in den oberen Kippwinkeln führen.</li>
-            <li><strong>Momentanes Verhältnis (SPS-Tangente):</strong> Für eine saubere PID-Regelung benötigt die Hydraulik die exakte momentane Änderungsrate. Das Skript ermittelt daher das Verhältnis der momentanen Geschwindigkeiten. Nur so weiß das Proportionalventil, wie viel Ölmenge in genau diesem Grad Kippwinkel benötigt wird, um ein Ruckeln oder Überschwingen zu vermeiden:</li>
+            <li><strong>Statisches Verhältnis (CAD-Sekante):</strong> Das einfache Teilen der absoluten Hublängen ($\frac{s_{Zyl}}{s_{Enc}}$) liefert nur einen Durchschnittswert über den bisherigen Weg. Ein statischer Wert würde bei der Regelung zu starken Positionsfehlern führen.</li>
+            <li><strong>Momentanes Verhältnis (SPS-Tangente):</strong> Für eine saubere Regelung benötigt die Hydraulik die exakte momentane Änderungsrate. Das Skript ermittelt daher das Verhältnis der aktuellen Geschwindigkeiten.</li>
         </ul>
+        
+        <div class="chart-wrapper" style="height: 320px; margin: 20px 0; border: 1px solid #e0e0e0;">
+            <canvas id="chartInfoFactor"></canvas>
+        </div>
+
         <div class="formula-box">
             $$i(\alpha) = \frac{\frac{dL_{Zyl}}{d\alpha}}{\frac{dL_{Enc}}{d\alpha}} = \frac{v_{Zyl}}{v_{Enc}}$$
         </div>
@@ -217,7 +222,7 @@
         angles: [], cylLengths: [], cylStrokes: [], encLengths: [], encStrokes: [], factors: [], stageTransitions: [], polyApproximations: []
     };
 
-    let chartLengths = null, chartFactor = null, chartRegression = null;
+    let chartLengths = null, chartFactor = null, chartRegression = null, chartInfoFactor = null;
     let ctxSim = null, cvs = null;
 
     /* =========================================================================
@@ -277,7 +282,6 @@
             });
         });
 
-        // Event für Polynom-Grad Slider
         document.getElementById('polyDegree').addEventListener('input', (e) => {
             document.getElementById('polyDegreeVal').innerText = e.target.value;
             recalculateKinematics();
@@ -291,7 +295,6 @@
         document.getElementById('btnSaveConfig').addEventListener('click', saveModalConfig);
 
         document.getElementById('btnOpenInfo').addEventListener('click', () => { document.getElementById('infoModal').style.display = 'flex'; });
-        // Fehler behoben: display = 'none' anstatt style.none
         document.getElementById('btnCloseInfo').addEventListener('click', () => { document.getElementById('infoModal').style.display = 'none'; });
     }
 
@@ -305,7 +308,7 @@
         GEO.encBase.y = parseFloat(document.getElementById('encBaseY').value);
         GEO.encTop0.x = parseFloat(document.getElementById('encTopX').value);
         
-let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
+        let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         GEO.encTop0.y = targetEncTopY;
         
         let st = parseInt(document.getElementById('numStages').value);
@@ -439,7 +442,7 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         let currentStageTracker = 0;
         kinData.stageTransitions.push({ x: 0, y: 0 });
 
-        let normX = []; // Normierter Winkel für Polynom-Regression (0..1)
+        let normX = []; 
         
         for (let a = 0; a <= 75; a += 0.5) {
             kinData.angles.push(a);
@@ -464,7 +467,6 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
                 currentStageTracker = stageIndex;
             }
 
-            // Differenzialquotient ohne Ternary-Operator, saubere numerische Ableitung
             let dCyl = getLengthDerivative(a, GEO.cylTop0, GEO.cylBase);
             let dEnc = getLengthDerivative(a, GEO.encTop0, GEO.encBase);
 
@@ -477,11 +479,9 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         }
         kinData.stageTransitions.push({ x: 75, y: kinData.cylStrokes[kinData.cylStrokes.length - 1] });
 
-        // --- POLYNOMLÖSER AUSFÜHREN ---
         let degree = parseInt(document.getElementById('polyDegree').value);
         let coeffs = fitPolynomial(normX, kinData.encStrokes, degree);
 
-        // Approximation berechnen
         for (let i = 0; i < kinData.angles.length; i++) {
             let x = normX[i];
             let approxVal = 0;
@@ -491,7 +491,6 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
             kinData.polyApproximations.push({x: kinData.angles[i], y: approxVal});
         }
 
-        // Formel-String bauen
         let formulaStr = `s_{Enc}(x) = `;
         for(let j=0; j<=degree; j++) {
             let c = coeffs[j].toFixed(2);
@@ -506,7 +505,6 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         formulaStr += ` \\quad \\text{mit } x = \\frac{\\alpha}{75^\\circ}`;
         document.getElementById('polyFormulaOutput').innerHTML = `$$ ${formulaStr} $$`;
         
-        // MathJax updaten
         if (window.MathJax && MathJax.typesetPromise) {
             MathJax.typesetPromise();
         }
@@ -526,7 +524,6 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
                 ctx.save(); ctx.beginPath(); ctx.moveTo(xPixel, yAxis.top); ctx.lineTo(xPixel, yAxis.bottom);
                 ctx.lineWidth = 1.5; ctx.strokeStyle = '#e67e22'; ctx.stroke();
                 
-                // Rotierter Text, hängt sicher unter der oberen Rasterlinie
                 ctx.translate(xPixel, yAxis.top + 10);
                 ctx.rotate(-Math.PI / 2);
                 ctx.fillStyle = '#e67e22'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
@@ -589,6 +586,16 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
             options: { ...optionsBase, plugins: { title: { display: true, text: 'Mathematische Validierung: Reallast vs. Regressionsmodell' }, legend: { position: 'top' } }, scales: { ...optionsBase.scales, y: { title: { display: true, text: 'Hub (mm)' }, min: 0 } } },
             plugins: [verticalCursorPlugin]
         });
+
+        chartInfoFactor = new Chart(document.getElementById('chartInfoFactor').getContext('2d'), {
+            type: 'line',
+            data: { datasets: [
+                { label: 'Statisches CAD-Verhältnis (Hub Zyl / Hub Enc)', borderColor: '#7f8c8d', data: [], tension: 0.1, pointRadius: 0, borderWidth: 2, borderDash: [5, 5] },
+                { label: 'Realer Momentaner Faktor (SPS-Signal)', borderColor: '#c0392b', data: [], tension: 0.1, pointRadius: 0, borderWidth: 3 }
+            ]},
+            options: { ...optionsBase, plugins: { title: { display: true, text: 'Warum die CAD-Messung für die Steuerung trügerisch ist' }, legend: { position: 'top' } }, scales: { ...optionsBase.scales, y: { title: { display: true, text: 'Faktor' }, min: 0 } } },
+            plugins: [verticalCursorPlugin]
+        });
     }
 
     function updateCharts() {
@@ -602,17 +609,32 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         chartFactor.options.scales.y.max = getNiceMax(Math.max(...kinData.factors.filter(f => f !== null)));
         chartFactor.update();
 
-        // Regression updaten
         let degree = parseInt(document.getElementById('polyDegree').value);
         chartRegression.data.datasets[0].data = kinData.angles.map((a, i) => ({x: a, y: kinData.encStrokes[i]}));
         chartRegression.data.datasets[1].data = kinData.polyApproximations;
         chartRegression.data.datasets[1].label = `Polynomiale Annäherung (${degree}. Grad)`;
         chartRegression.options.scales.y.max = getNiceMax(Math.max(...kinData.encStrokes));
         chartRegression.update();
+
+        let staticFactors = kinData.angles.map((a, i) => {
+            if (kinData.encStrokes[i] > 0.5) {
+                return { x: a, y: kinData.cylStrokes[i] / kinData.encStrokes[i] };
+            }
+            return { x: a, y: null }; 
+        });
+
+        chartInfoFactor.data.datasets[0].data = staticFactors;
+        chartInfoFactor.data.datasets[1].data = kinData.angles.map((a, i) => ({x: a, y: kinData.factors[i]}));
+        
+        let validStatic = staticFactors.filter(p => p.y !== null).map(p => p.y);
+        let maxInfoF = getNiceMax(Math.max(...validStatic, ...kinData.factors.filter(f => f !== null && f < 5)));
+        chartInfoFactor.options.scales.y.max = maxInfoF;
+        chartInfoFactor.update();
     }
 
     function updateChartCursors() {
         chartLengths.update('none'); chartFactor.update('none'); chartRegression.update('none');
+        if(chartInfoFactor) chartInfoFactor.update('none');
     }
 
     /* =========================================================================
@@ -676,13 +698,13 @@ let targetEncTopY = parseFloat(document.getElementById('encTopY').value);
         ctxSim.beginPath(); ctxSim.arc(pEncTop.x, pEncTop.y, 4, 0, Math.PI*2); ctxSim.fill();
         ctxSim.beginPath(); ctxSim.arc(pOrigin.x, pOrigin.y, 8, 0, Math.PI*2); ctxSim.fillStyle = '#2c3e50'; ctxSim.fill(); 
 
-        ctxSim.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctxSim.fillRect(10, 10, 310, 100); ctxSim.strokeStyle = '#ddd'; ctxSim.strokeRect(10, 10, 310, 100);
+        ctxSim.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctxSim.fillRect(10, 10, 360, 100); ctxSim.strokeStyle = '#ddd'; ctxSim.strokeRect(10, 10, 360, 100);
         ctxSim.fillStyle = '#333'; ctxSim.font = 'bold 13px Consolas, monospace';
-        ctxSim.fillText(`Winkel:         ${currentAngle.toFixed(1)}°`, 20, 30);
+        ctxSim.fillText(`Winkel:                 ${currentAngle.toFixed(1)}°`, 20, 30);
         let curStrokeEnc = dist(GEO.encBase, pEncTopReal) - dist(GEO.encBase, GEO.encTop0);
         let factor = 0; if(kinData.angles.length > 0) factor = kinData.factors[Math.min(Math.floor(currentAngle / 0.5), kinData.factors.length - 1)];
 
-let absLenCyl = dist(GEO.cylBase, pCylTopReal);
+        let absLenCyl = dist(GEO.cylBase, pCylTopReal);
         let absLenEnc = dist(GEO.encBase, pEncTopReal);
 
         ctxSim.fillStyle = '#2980b9'; 
