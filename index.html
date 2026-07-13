@@ -179,8 +179,12 @@
             $$L(\alpha) = \sqrt{(x' - x_{base})^2 + (y' - y_{base})^2}$$
         </div>
 
-        <h4>3. Momentanes Übersetzungsverhältnis (Getriebefaktor)</h4>
-        <p>Die SPS benötigt nicht den absoluten Hub, sondern die <strong>Änderungsrate</strong>. Wenn das Seil sich kurz auf- und dann wieder abrollt, würde der absolute Bruch $\frac{Hub}{0}$ kollabieren. Daher nutzen wir die Ableitungen (Geschwindigkeiten) der Längen nach dem Winkel $\alpha$:</p>
+        <h4>3. Statisches vs. Momentanes Übersetzungsverhältnis</h4>
+        <p>Ein reiner Dreisatzvergleich der Sehnen- oder Hublängen aus dem CAD liefert <strong>nicht</strong> den korrekten Faktor für die Steuerung. Hier muss streng unterschieden werden:</p>
+        <ul>
+            <li><strong>Statisches Verhältnis (CAD-Sekante):</strong> Das einfache Teilen der Hublängen ($\frac{s_{Zyl}}{s_{Enc}}$) liefert nur einen Durchschnittswert über den bisher zurückgelegten Weg. Da die Anlage sich auf Kreisbahnen bewegt, verändert sich die Hebelwirkung durch den Sinus-/Kosinus-Einfluss jedoch nichtlinear. Ein statischer Wert würde bei der Regelung zu starken Fehlern in den oberen Kippwinkeln führen.</li>
+            <li><strong>Momentanes Verhältnis (SPS-Tangente):</strong> Für eine saubere PID-Regelung benötigt die Hydraulik die exakte momentane Änderungsrate. Das Skript ermittelt daher das Verhältnis der momentanen Geschwindigkeiten. Nur so weiß das Proportionalventil, wie viel Ölmenge in genau diesem Grad Kippwinkel benötigt wird, um ein Ruckeln oder Überschwingen zu vermeiden:</li>
+        </ul>
         <div class="formula-box">
             $$i(\alpha) = \frac{\frac{dL_{Zyl}}{d\alpha}}{\frac{dL_{Enc}}{d\alpha}} = \frac{v_{Zyl}}{v_{Enc}}$$
         </div>
